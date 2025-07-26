@@ -1,214 +1,108 @@
 <?php
 /**
- * Script de instalación del Sistema de Contacto
- * Ejecuta este archivo una sola vez para configurar el sistema
+ * Instalador Automático desde GitHub
+ * Descarga e instala el sistema de contacto desde el repositorio
+ * 
+ * Uso: Sube este archivo a la carpeta donde quieres instalar el sistema
+ * y accede a él desde tu navegador.
  */
 
 session_start();
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
-// Verificar si ya está instalado
-$installed = file_exists('.installed');
+// Configuración del repositorio
+$GITHUB_REPO = 'Oberluss/contacto';
+$GITHUB_BRANCH = 'main'; // o 'master' si usas esa rama
 
-// Procesar formulario de instalación
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
-    $errors = [];
-    $success = false;
+// Función para descargar archivo
+function descargarArchivo($url, $destino) {
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'PHP Installer');
     
-    // Validar datos
-    $admin_password = $_POST['admin_password'] ?? '';
-    $confirm_password = $_POST['confirm_password'] ?? '';
-    $admin_email = $_POST['admin_email'] ?? '';
-    $site_title = $_POST['site_title'] ?? 'Mi Sitio Web';
-    $timezone = $_POST['timezone'] ?? date_default_timezone_get();
+    $data = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
     
-    // Validaciones
-    if (strlen($admin_password) < 8) {
-        $errors[] = 'La contraseña debe tener al menos 8 caracteres';
+    if ($httpCode == 200 && $data !== false) {
+        return file_put_contents($destino, $data) !== false;
     }
-    
-    if ($admin_password !== $confirm_password) {
-        $errors[] = 'Las contraseñas no coinciden';
-    }
-    
-    if (!filter_var($admin_email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = 'El email no es válido';
-    }
-    
-    if (empty($errors)) {
-        try {
-            // Crear archivos necesarios
-            $files_to_create = [
-                'contactos.txt' => '',
-                'comentarios.txt' => '',
-                '.htaccess' => '# Proteger archivos sensibles
-<FilesMatch "\.(txt|log)$">
-    Order Allow,Deny
-    Deny from all
-</FilesMatch>
-
-# Proteger config
-<Files "config.php">
-    Order Allow,Deny
-    Deny from all
-</Files>
-
-# Proteger instalador
-<Files "install.php">
-    Order Allow,Deny
-    Deny from all
-</Files>
-
-# Denegar acceso a archivos ocultos
-<FilesMatch "^\.">
-    Order allow,deny
-    Deny from all
-</FilesMatch>'
-            ];
-            
-            // Crear archivos
-            foreach ($files_to_create as $file => $content) {
-                if (!file_exists($file)) {
-                    if (file_put_contents($file, $content) === false) {
-                        throw new Exception("No se pudo crear el archivo: $file");
-                    }
-                }
-            }
-            
-            // Crear directorio de backups
-            if (!is_dir('backups')) {
-                if (!mkdir('backups', 0755)) {
-                    throw new Exception("No se pudo crear el directorio de backups");
-                }
-                // Proteger directorio de backups
-                file_put_contents('backups/.htaccess', 'Deny from all');
-            }
-            
-            // Actualizar ver-mensajes.php con la nueva contraseña
-            if (file_exists('ver-mensajes.php')) {
-                $contenido = file_get_contents('ver-mensajes.php');
-                if ($contenido === false) {
-                    throw new Exception("No se pudo leer ver-mensajes.php");
-                }
-                
-                // Buscar y reemplazar la contraseña
-                $patron = '/\$password_admin\s*=\s*[\'"].*?[\'"]\s*;/';
-                $reemplazo = '$password_admin = \'' . addslashes($admin_password) . '\';';
-                $contenido_nuevo = preg_replace($patron, $reemplazo, $contenido);
-                
-                if ($contenido_nuevo === null) {
-                    throw new Exception("Error al procesar ver-mensajes.php");
-                }
-                
-                if (file_put_contents('ver-mensajes.php', $contenido_nuevo) === false) {
-                    throw new Exception("No se pudo actualizar ver-mensajes.php");
-                }
-            } else {
-                throw new Exception("No se encontró el archivo ver-mensajes.php");
-            }
-            
-            // Crear archivo de configuración principal
-            $config_content = '<?php
-/**
- * Archivo de configuración generado automáticamente
- * Fecha: ' . date('Y-m-d H:i:s') . '
- */
-
-return [
-    // Configuración general
-    \'site_title\' => \'' . addslashes($site_title) . '\',
-    \'admin_email\' => \'' . addslashes($admin_email) . '\',
-    \'admin_password\' => \'' . addslashes($admin_password) . '\',
-    \'timezone\' => \'' . addslashes($timezone) . '\',
-    \'installed_date\' => \'' . date('Y-m-d H:i:s') . '\',
-    \'version\' => \'1.0.0\',
-    
-    // Configuración de seguridad
-    \'session_lifetime\' => 30,
-    \'rate_limit\' => 10,
-    \'blocked_ips\' => [],
-    
-    // Configuración de archivos
-    \'contacts_file\' => \'contactos.txt\',
-    \'comments_file\' => \'comentarios.txt\',
-    \'backup_dir\' => \'backups/\',
-    \'auto_backup\' => true,
-    
-    // Configuración de email
-    \'send_notifications\' => ' . (isset($_POST['send_notifications']) ? 'true' : 'false') . ',
-    \'notification_subject\' => \'Nuevo mensaje de contacto\',
-    \'from_email\' => \'noreply@\' . $_SERVER[\'HTTP_HOST\'],
-    \'from_name\' => \'' . addslashes($site_title) . '\',
-    
-    // Mensajes personalizados
-    \'messages\' => [
-        \'success\' => \'¡Mensaje enviado correctamente! Nos pondremos en contacto contigo pronto.\',
-        \'error\' => \'Error al enviar el mensaje. Por favor, intenta más tarde.\',
-        \'rate_limit\' => \'Has enviado demasiados mensajes. Por favor, intenta más tarde.\',
-        \'blocked\' => \'Tu solicitud ha sido bloqueada.\',
-        \'invalid_email\' => \'Por favor, ingresa un email válido.\',
-        \'required_field\' => \'Este campo es requerido.\',
-        \'message_too_short\' => \'El mensaje es demasiado corto.\',
-        \'message_too_long\' => \'El mensaje es demasiado largo.\'
-    ]
-];';
-            
-            if (file_put_contents('config.php', $config_content) === false) {
-                throw new Exception("No se pudo crear config.php");
-            }
-            
-            // Marcar como instalado
-            file_put_contents('.installed', date('Y-m-d H:i:s') . "\nInstalado por: " . $admin_email);
-            
-            // Configurar zona horaria
-            date_default_timezone_set($timezone);
-            
-            $success = true;
-            
-        } catch (Exception $e) {
-            $errors[] = 'Error durante la instalación: ' . $e->getMessage();
-            
-            // Intentar limpiar archivos creados si hay error
-            if (file_exists('.installed')) {
-                unlink('.installed');
-            }
-        }
-    }
+    return false;
 }
 
-// Verificar requisitos del sistema
-$requirements = [
-    'PHP Version >= 7.0' => version_compare(PHP_VERSION, '7.0.0', '>='),
-    'Directorio escribible' => is_writable('.'),
-    'Función mail()' => function_exists('mail'),
-    'JSON habilitado' => function_exists('json_encode'),
-    'Sesiones habilitadas' => function_exists('session_start'),
-    'Archivos necesarios' => file_exists('ver-mensajes.php') && file_exists('index.html') && file_exists('procesar-contacto.php')
-];
+// Función para extraer ZIP
+function extraerZip($archivo, $destino) {
+    $zip = new ZipArchive;
+    if ($zip->open($archivo) === TRUE) {
+        $zip->extractTo($destino);
+        $zip->close();
+        return true;
+    }
+    return false;
+}
 
-// Lista de zonas horarias comunes
-$timezones = [
-    'America/Mexico_City' => 'Ciudad de México',
-    'America/New_York' => 'Nueva York',
-    'America/Chicago' => 'Chicago',
-    'America/Los_Angeles' => 'Los Ángeles',
-    'America/Argentina/Buenos_Aires' => 'Buenos Aires',
-    'America/Bogota' => 'Bogotá',
-    'America/Lima' => 'Lima',
-    'America/Santiago' => 'Santiago',
-    'Europe/Madrid' => 'Madrid',
-    'Europe/London' => 'Londres',
-    'Europe/Paris' => 'París',
-    'Europe/Berlin' => 'Berlín',
-    'UTC' => 'UTC'
-];
+// Procesar instalación
+$paso = $_GET['paso'] ?? 'inicio';
+$mensaje = '';
+$error = '';
 
+// Si ya está instalado
+if (file_exists('.installed') && $paso != 'reinstalar') {
+    $paso = 'ya_instalado';
+}
+
+// Procesar formulario de configuración
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $paso === 'configurar') {
+    $password = $_POST['password'] ?? '';
+    $email = $_POST['email'] ?? '';
+    
+    if (strlen($password) < 8) {
+        $error = 'La contraseña debe tener al menos 8 caracteres';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error = 'El email no es válido';
+    } else {
+        // Actualizar contraseña en ver-mensajes.php
+        if (file_exists('ver-mensajes.php')) {
+            $contenido = file_get_contents('ver-mensajes.php');
+            $contenido = preg_replace(
+                '/\$password_admin = \'.*?\';/',
+                '$password_admin = \'' . addslashes($password) . '\';',
+                $contenido
+            );
+            file_put_contents('ver-mensajes.php', $contenido);
+        }
+        
+        // Crear archivo de configuración
+        $config = '<?php
+return [
+    \'site_title\' => \'' . addslashes($_POST['site_title'] ?? 'Mi Sitio Web') . '\',
+    \'admin_email\' => \'' . addslashes($email) . '\',
+    \'admin_password\' => \'' . addslashes($password) . '\',
+    \'timezone\' => \'' . addslashes($_POST['timezone'] ?? date_default_timezone_get()) . '\',
+    \'installed_date\' => \'' . date('Y-m-d H:i:s') . '\',
+    \'send_notifications\' => ' . (isset($_POST['notifications']) ? 'true' : 'false') . '
+];';
+        
+        file_put_contents('config.php', $config);
+        file_put_contents('.installed', date('Y-m-d H:i:s'));
+        
+        // Crear archivos vacíos si no existen
+        if (!file_exists('contactos.txt')) file_put_contents('contactos.txt', '');
+        if (!file_exists('comentarios.txt')) file_put_contents('comentarios.txt', '');
+        
+        $paso = 'completado';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instalación - Sistema de Contacto</title>
+    <title>Instalador desde GitHub - Sistema de Contacto</title>
     <style>
         * {
             margin: 0;
@@ -217,7 +111,7 @@ $timezones = [
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
@@ -226,86 +120,102 @@ $timezones = [
             padding: 20px;
         }
         
-        .installer {
+        .container {
             background: white;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
             width: 100%;
             max-width: 600px;
             overflow: hidden;
         }
         
         .header {
-            background: #4CAF50;
+            background: #24292e;
             color: white;
             padding: 30px;
             text-align: center;
         }
         
+        .github-icon {
+            width: 60px;
+            height: 60px;
+            margin-bottom: 20px;
+        }
+        
         .header h1 {
-            font-size: 28px;
+            font-size: 24px;
             margin-bottom: 10px;
         }
         
         .header p {
-            opacity: 0.9;
+            opacity: 0.8;
+            font-size: 14px;
         }
         
         .content {
             padding: 40px;
         }
         
-        .section {
+        .step {
             margin-bottom: 30px;
         }
         
-        .section h2 {
-            color: #333;
-            margin-bottom: 20px;
-            font-size: 20px;
+        .step-header {
             display: flex;
             align-items: center;
-            gap: 10px;
+            margin-bottom: 15px;
         }
         
-        .section h2::before {
-            content: '';
-            display: inline-block;
-            width: 4px;
-            height: 20px;
+        .step-number {
             background: #4CAF50;
-            border-radius: 2px;
-        }
-        
-        .requirements {
-            list-style: none;
-        }
-        
-        .requirement {
-            padding: 10px 15px;
-            margin-bottom: 10px;
-            border-radius: 5px;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
+            justify-content: center;
+            margin-right: 15px;
+            font-weight: bold;
         }
         
-        .requirement.success {
+        .step-number.inactive {
+            background: #ccc;
+        }
+        
+        .step h2 {
+            color: #333;
+            font-size: 18px;
+        }
+        
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .status.success {
             background: #d4edda;
             color: #155724;
-            border-color: #c3e6cb;
+            border: 1px solid #c3e6cb;
         }
         
-        .requirement.error {
+        .status.error {
             background: #f8d7da;
             color: #721c24;
-            border-color: #f5c6cb;
+            border: 1px solid #f5c6cb;
         }
         
-        .status-icon {
-            font-size: 18px;
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
         }
         
         .form-group {
@@ -319,162 +229,99 @@ $timezones = [
             font-weight: 500;
         }
         
-        label .required {
-            color: #e74c3c;
-        }
-        
-        input[type="text"],
-        input[type="email"],
-        input[type="password"],
-        select {
+        input, select {
             width: 100%;
             padding: 12px;
             border: 2px solid #e0e0e0;
-            border-radius: 5px;
+            border-radius: 6px;
             font-size: 16px;
             transition: border-color 0.3s;
-            font-family: inherit;
         }
         
-        input:focus,
-        select:focus {
+        input:focus, select:focus {
             outline: none;
             border-color: #4CAF50;
-        }
-        
-        .help-text {
-            font-size: 14px;
-            color: #666;
-            margin-top: 5px;
         }
         
         .checkbox-group {
             display: flex;
             align-items: center;
             gap: 10px;
-            margin-top: 10px;
         }
         
-        .checkbox-group input[type="checkbox"] {
+        .checkbox-group input {
             width: auto;
-            height: 18px;
-            width: 18px;
-            cursor: pointer;
-        }
-        
-        .checkbox-group label {
-            margin: 0;
-            cursor: pointer;
-            font-weight: normal;
         }
         
         .btn {
             background: #4CAF50;
             color: white;
-            padding: 15px 30px;
+            padding: 12px 30px;
             border: none;
-            border-radius: 5px;
+            border-radius: 6px;
             font-size: 16px;
             font-weight: 500;
             cursor: pointer;
-            width: 100%;
             transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            margin-right: 10px;
+            margin-top: 10px;
         }
         
         .btn:hover {
             background: #45a049;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
-        }
-        
-        .btn:active {
-            transform: translateY(0);
-        }
-        
-        .btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-        
-        .alert {
-            padding: 15px 20px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-        
-        .alert h3 {
-            margin-bottom: 10px;
-        }
-        
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .alert-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        
-        .alert ul {
-            margin: 10px 0 0 20px;
-        }
-        
-        .installed {
-            text-align: center;
-            padding: 60px 40px;
-        }
-        
-        .installed .icon {
-            font-size: 80px;
-            color: #4CAF50;
-            margin-bottom: 20px;
-        }
-        
-        .installed h2 {
-            color: #4CAF50;
-            margin-bottom: 20px;
-            font-size: 28px;
-        }
-        
-        .installed p {
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 18px;
-        }
-        
-        .links {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-        
-        .links a {
-            color: #4CAF50;
-            text-decoration: none;
-            padding: 12px 24px;
-            border: 2px solid #4CAF50;
-            border-radius: 5px;
-            transition: all 0.3s;
-            font-weight: 500;
-        }
-        
-        .links a:hover {
-            background: #4CAF50;
-            color: white;
             transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.3);
+        }
+        
+        .btn.secondary {
+            background: #6c757d;
+        }
+        
+        .btn.secondary:hover {
+            background: #5a6268;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .file-list {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .file-item {
+            padding: 5px 0;
+            color: #666;
+            font-size: 14px;
         }
         
         .progress {
             background: #f0f0f0;
-            height: 4px;
-            border-radius: 2px;
+            height: 6px;
+            border-radius: 3px;
             overflow: hidden;
             margin: 20px 0;
         }
@@ -486,6 +333,20 @@ $timezones = [
             transition: width 0.3s;
         }
         
+        code {
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #e83e8c;
+        }
+        
+        .links {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
         @media (max-width: 600px) {
             .content {
                 padding: 30px 20px;
@@ -495,253 +356,282 @@ $timezones = [
                 flex-direction: column;
             }
             
-            .links a {
+            .btn {
                 width: 100%;
                 text-align: center;
             }
         }
-        
-        .password-strength {
-            margin-top: 5px;
-            font-size: 14px;
-        }
-        
-        .strength-weak {
-            color: #e74c3c;
-        }
-        
-        .strength-medium {
-            color: #f39c12;
-        }
-        
-        .strength-strong {
-            color: #27ae60;
-        }
     </style>
 </head>
 <body>
-    <div class="installer">
+    <div class="container">
         <div class="header">
-            <h1>🚀 Instalación del Sistema de Contacto</h1>
-            <p>Configuración inicial del sistema</p>
+            <svg class="github-icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+            </svg>
+            <h1>Instalador desde GitHub</h1>
+            <p>Sistema de Contacto - <?php echo $GITHUB_REPO; ?></p>
         </div>
         
         <div class="content">
-            <?php if ($installed): ?>
-                <div class="installed">
-                    <div class="icon">✅</div>
-                    <h2>Sistema ya instalado</h2>
-                    <p>El sistema de contacto ya está instalado y configurado correctamente.</p>
-                    <div class="links">
-                        <a href="index.html">Ver Formulario</a>
-                        <a href="ver-mensajes.php">Panel Admin</a>
+            <?php if ($paso === 'inicio'): ?>
+                <div class="step">
+                    <div class="step-header">
+                        <span class="step-number">1</span>
+                        <h2>Bienvenido al Instalador</h2>
                     </div>
-                </div>
-            <?php else: ?>
-                <?php if (!empty($errors)): ?>
-                    <div class="alert alert-error">
-                        <h3>⚠️ Errores encontrados:</h3>
-                        <ul>
-                            <?php foreach ($errors as $error): ?>
-                                <li><?php echo htmlspecialchars($error); ?></li>
-                            <?php endforeach; ?>
-                        </ul>
-                    </div>
-                <?php endif; ?>
-                
-                <?php if (isset($success) && $success): ?>
-                    <div class="alert alert-success">
-                        <h3>✅ ¡Instalación completada!</h3>
-                        <p>El sistema se ha instalado correctamente. Tu contraseña ha sido configurada.</p>
-                    </div>
-                    <div class="links">
-                        <a href="index.html">Ver Formulario</a>
-                        <a href="ver-mensajes.php">Acceder al Panel</a>
-                    </div>
-                <?php else: ?>
-                    <div class="section">
-                        <h2>Verificación de Requisitos</h2>
-                        <ul class="requirements">
-                            <?php foreach ($requirements as $req => $status): ?>
-                                <li class="requirement <?php echo $status ? 'success' : 'error'; ?>">
-                                    <span><?php echo $req; ?></span>
-                                    <span class="status-icon"><?php echo $status ? '✓' : '✗'; ?></span>
-                                </li>
-                            <?php endforeach; ?>
+                    
+                    <div class="status info">
+                        <strong>📦 Este instalador:</strong>
+                        <ul style="margin: 10px 0 0 20px;">
+                            <li>Descargará los archivos desde GitHub</li>
+                            <li>Los instalará en esta carpeta</li>
+                            <li>Configurará el sistema automáticamente</li>
                         </ul>
                     </div>
                     
-                    <?php
-                    $all_requirements_met = !in_array(false, $requirements);
-                    if ($all_requirements_met):
-                    ?>
-                        <div class="section">
-                            <h2>Configuración del Sistema</h2>
-                            <form method="POST" id="installForm">
-                                <div class="form-group">
-                                    <label for="site_title">Título del Sitio</label>
-                                    <input 
-                                        type="text" 
-                                        id="site_title" 
-                                        name="site_title" 
-                                        value="<?php echo htmlspecialchars($_POST['site_title'] ?? 'Mi Sitio Web'); ?>" 
-                                        required
-                                    >
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="admin_email">Email del Administrador <span class="required">*</span></label>
-                                    <input 
-                                        type="email" 
-                                        id="admin_email" 
-                                        name="admin_email" 
-                                        value="<?php echo htmlspecialchars($_POST['admin_email'] ?? ''); ?>"
-                                        required
-                                    >
-                                    <p class="help-text">Recibirás notificaciones de nuevos mensajes en este email</p>
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="admin_password">Contraseña del Panel <span class="required">*</span></label>
-                                    <input 
-                                        type="password" 
-                                        id="admin_password" 
-                                        name="admin_password" 
-                                        required 
-                                        minlength="8"
-                                        onkeyup="checkPasswordStrength(this.value)"
-                                    >
-                                    <div id="passwordStrength" class="password-strength"></div>
-                                    <p class="help-text">Mínimo 8 caracteres. Esta será tu contraseña para acceder al panel de administración.</p>
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="confirm_password">Confirmar Contraseña <span class="required">*</span></label>
-                                    <input 
-                                        type="password" 
-                                        id="confirm_password" 
-                                        name="confirm_password" 
-                                        required 
-                                        minlength="8"
-                                    >
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="timezone">Zona Horaria</label>
-                                    <select id="timezone" name="timezone">
-                                        <?php 
-                                        $current_tz = date_default_timezone_get();
-                                        foreach ($timezones as $tz => $label): 
-                                        ?>
-                                            <option value="<?php echo $tz; ?>" <?php echo $tz === $current_tz ? 'selected' : ''; ?>>
-                                                <?php echo $label; ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                
-                                <div class="form-group">
-                                    <div class="checkbox-group">
-                                        <input type="checkbox" id="send_notifications" name="send_notifications" checked>
-                                        <label for="send_notifications">
-                                            Activar notificaciones por email cuando reciba nuevos mensajes
-                                        </label>
-                                    </div>
-                                </div>
-                                
-                                <div class="progress">
-                                    <div class="progress-bar" id="progressBar"></div>
-                                </div>
-                                
-                                <button type="submit" class="btn" id="installBtn">
-                                    Instalar Sistema
-                                </button>
-                            </form>
+                    <p style="margin-bottom: 20px;">
+                        <strong>Repositorio:</strong> 
+                        <code>github.com/<?php echo $GITHUB_REPO; ?></code>
+                    </p>
+                    
+                    <a href="?paso=descargar" class="btn">Comenzar Instalación</a>
+                </div>
+                
+            <?php elseif ($paso === 'descargar'): ?>
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <h2>Descargando archivos...</h2>
+                    <p>Por favor espera mientras descargamos los archivos desde GitHub</p>
+                </div>
+                
+                <script>
+                    setTimeout(function() {
+                        window.location.href = '?paso=procesar';
+                    }, 1000);
+                </script>
+                
+            <?php elseif ($paso === 'procesar'): ?>
+                <?php
+                // Descargar el ZIP del repositorio
+                $zipUrl = "https://github.com/{$GITHUB_REPO}/archive/refs/heads/{$GITHUB_BRANCH}.zip";
+                $zipFile = 'temp_repo.zip';
+                
+                $descargaExitosa = false;
+                $archivosDescargados = [];
+                
+                // Intentar descargar
+                if (descargarArchivo($zipUrl, $zipFile)) {
+                    // Extraer ZIP
+                    if (extraerZip($zipFile, '.')) {
+                        // Mover archivos desde la subcarpeta al directorio actual
+                        $carpetaExtraccion = "contacto-{$GITHUB_BRANCH}";
+                        
+                        if (is_dir($carpetaExtraccion)) {
+                            $archivos = [
+                                'index.html',
+                                'procesar-contacto.php',
+                                'ver-mensajes.php',
+                                'README.md',
+                                '.gitignore'
+                            ];
+                            
+                            foreach ($archivos as $archivo) {
+                                $origen = $carpetaExtraccion . '/' . $archivo;
+                                if (file_exists($origen)) {
+                                    if (copy($origen, $archivo)) {
+                                        $archivosDescargados[] = $archivo;
+                                    }
+                                }
+                            }
+                            
+                            // Limpiar: eliminar carpeta temporal
+                            $files = new RecursiveIteratorIterator(
+                                new RecursiveDirectoryIterator($carpetaExtraccion, RecursiveDirectoryIterator::SKIP_DOTS),
+                                RecursiveIteratorIterator::CHILD_FIRST
+                            );
+                            
+                            foreach ($files as $fileinfo) {
+                                $todo = ($fileinfo->isDir() ? 'rmdir' : 'unlink');
+                                $todo($fileinfo->getRealPath());
+                            }
+                            
+                            rmdir($carpetaExtraccion);
+                            $descargaExitosa = true;
+                        }
+                    }
+                    
+                    // Eliminar ZIP
+                    @unlink($zipFile);
+                }
+                ?>
+                
+                <div class="step">
+                    <div class="step-header">
+                        <span class="step-number">2</span>
+                        <h2>Descarga de Archivos</h2>
+                    </div>
+                    
+                    <?php if ($descargaExitosa && count($archivosDescargados) > 0): ?>
+                        <div class="status success">
+                            ✅ <strong>Archivos descargados correctamente!</strong>
+                        </div>
+                        
+                        <div class="file-list">
+                            <strong>Archivos instalados:</strong>
+                            <?php foreach ($archivosDescargados as $archivo): ?>
+                                <div class="file-item">✓ <?php echo $archivo; ?></div>
+                            <?php endforeach; ?>
+                        </div>
+                        
+                        <div style="margin-top: 30px;">
+                            <a href="?paso=configurar" class="btn">Continuar con la Configuración</a>
                         </div>
                     <?php else: ?>
-                        <div class="alert alert-error">
-                            <h3>⚠️ Requisitos no cumplidos</h3>
-                            <p>Por favor, corrige los requisitos marcados en rojo antes de continuar con la instalación.</p>
-                            <ul style="margin-top: 10px;">
-                                <li>Asegúrate de que PHP 7.0 o superior esté instalado</li>
-                                <li>Verifica que el directorio tenga permisos de escritura (755 o 777)</li>
-                                <li>Confirma que todos los archivos del sistema estén presentes</li>
+                        <div class="status error">
+                            ❌ <strong>Error al descargar los archivos</strong>
+                        </div>
+                        
+                        <div class="status warning">
+                            <strong>Descarga manual:</strong>
+                            <ol style="margin: 10px 0 0 20px;">
+                                <li>Descarga los archivos desde: <a href="https://github.com/<?php echo $GITHUB_REPO; ?>" target="_blank">GitHub</a></li>
+                                <li>Súbelos a esta carpeta</li>
+                                <li>Vuelve a ejecutar este instalador</li>
+                            </ol>
+                        </div>
+                        
+                        <div class="status info">
+                            <strong>Posibles causas del error:</strong>
+                            <ul style="margin: 10px 0 0 20px;">
+                                <li>El servidor no permite descargas externas (CURL deshabilitado)</li>
+                                <li>No hay permisos de escritura en el directorio</li>
+                                <li>El repositorio es privado o no existe</li>
                             </ul>
                         </div>
+                        
+                        <a href="?paso=inicio" class="btn secondary">Volver al Inicio</a>
                     <?php endif; ?>
-                <?php endif; ?>
+                </div>
+                
+            <?php elseif ($paso === 'configurar'): ?>
+                <div class="step">
+                    <div class="step-header">
+                        <span class="step-number">3</span>
+                        <h2>Configuración del Sistema</h2>
+                    </div>
+                    
+                    <?php if ($error): ?>
+                        <div class="status error">
+                            ❌ <?php echo $error; ?>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <form method="POST" action="?paso=configurar">
+                        <div class="form-group">
+                            <label for="site_title">Título del Sitio</label>
+                            <input type="text" id="site_title" name="site_title" value="Mi Sitio Web" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="email">Email del Administrador</label>
+                            <input type="email" id="email" name="email" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="password">Contraseña del Panel (mínimo 8 caracteres)</label>
+                            <input type="password" id="password" name="password" required minlength="8">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="timezone">Zona Horaria</label>
+                            <select id="timezone" name="timezone">
+                                <option value="America/Mexico_City">Ciudad de México</option>
+                                <option value="America/New_York">Nueva York</option>
+                                <option value="America/Argentina/Buenos_Aires">Buenos Aires</option>
+                                <option value="Europe/Madrid">Madrid</option>
+                                <option value="UTC">UTC</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="notifications" name="notifications" checked>
+                                <label for="notifications">Recibir notificaciones por email</label>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn">Completar Instalación</button>
+                    </form>
+                </div>
+                
+            <?php elseif ($paso === 'completado'): ?>
+                <div class="step">
+                    <div class="step-header">
+                        <span class="step-number">✓</span>
+                        <h2>¡Instalación Completada!</h2>
+                    </div>
+                    
+                    <div class="status success">
+                        🎉 <strong>El sistema se ha instalado correctamente</strong>
+                    </div>
+                    
+                    <p style="margin-bottom: 20px;">
+                        Tu sistema de contacto está listo para usar. 
+                        Puedes acceder a las siguientes secciones:
+                    </p>
+                    
+                    <div class="links">
+                        <a href="index.html" class="btn">Ver Formulario</a>
+                        <a href="ver-mensajes.php" class="btn secondary">Panel de Admin</a>
+                    </div>
+                    
+                    <div class="status warning" style="margin-top: 30px;">
+                        <strong>⚠️ Importante:</strong> Por seguridad, elimina este archivo 
+                        <code><?php echo basename(__FILE__); ?></code> después de la instalación.
+                    </div>
+                </div>
+                
+            <?php elseif ($paso === 'ya_instalado'): ?>
+                <div class="step">
+                    <div class="step-header">
+                        <span class="step-number">!</span>
+                        <h2>Sistema Ya Instalado</h2>
+                    </div>
+                    
+                    <div class="status info">
+                        El sistema ya está instalado en este directorio.
+                    </div>
+                    
+                    <div class="links">
+                        <a href="index.html" class="btn">Ir al Formulario</a>
+                        <a href="ver-mensajes.php" class="btn secondary">Panel Admin</a>
+                    </div>
+                    
+                    <div style="margin-top: 30px; padding-top: 30px; border-top: 1px solid #eee;">
+                        <p style="color: #666; margin-bottom: 10px;">
+                            Si deseas reinstalar el sistema:
+                        </p>
+                        <a href="?paso=reinstalar" class="btn secondary" 
+                           onclick="return confirm('¿Estás seguro? Esto eliminará la configuración actual.')">
+                            Reinstalar Sistema
+                        </a>
+                    </div>
+                </div>
+                
+                <?php
+                if ($paso === 'reinstalar') {
+                    // Eliminar archivos de instalación
+                    @unlink('.installed');
+                    @unlink('config.php');
+                    @unlink('contactos.txt');
+                    @unlink('comentarios.txt');
+                    header('Location: ?paso=inicio');
+                    exit;
+                }
+                ?>
             <?php endif; ?>
         </div>
     </div>
-    
-    <script>
-        // Verificar fuerza de contraseña
-        function checkPasswordStrength(password) {
-            const strengthDiv = document.getElementById('passwordStrength');
-            let strength = 0;
-            let message = '';
-            
-            if (password.length >= 8) strength++;
-            if (password.length >= 12) strength++;
-            if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
-            if (/[0-9]/.test(password)) strength++;
-            if (/[^a-zA-Z0-9]/.test(password)) strength++;
-            
-            if (password.length === 0) {
-                strengthDiv.textContent = '';
-                return;
-            }
-            
-            if (strength <= 2) {
-                message = '⚠️ Contraseña débil';
-                strengthDiv.className = 'password-strength strength-weak';
-            } else if (strength === 3) {
-                message = '⚡ Contraseña media';
-                strengthDiv.className = 'password-strength strength-medium';
-            } else {
-                message = '✅ Contraseña fuerte';
-                strengthDiv.className = 'password-strength strength-strong';
-            }
-            
-            strengthDiv.textContent = message;
-        }
-        
-        // Validar formulario antes de enviar
-        document.getElementById('installForm')?.addEventListener('submit', function(e) {
-            const password = document.getElementById('admin_password').value;
-            const confirmPassword = document.getElementById('confirm_password').value;
-            const progressBar = document.getElementById('progressBar');
-            const installBtn = document.getElementById('installBtn');
-            
-            if (password !== confirmPassword) {
-                e.preventDefault();
-                alert('Las contraseñas no coinciden. Por favor, verifica e intenta nuevamente.');
-                return;
-            }
-            
-            // Mostrar progreso
-            installBtn.textContent = 'Instalando...';
-            installBtn.disabled = true;
-            
-            let progress = 0;
-            const interval = setInterval(function() {
-                progress += 10;
-                progressBar.style.width = progress + '%';
-                
-                if (progress >= 90) {
-                    clearInterval(interval);
-                }
-            }, 100);
-        });
-        
-        // Auto-focus en el primer campo vacío
-        window.addEventListener('load', function() {
-            const firstEmpty = document.querySelector('input:not([value]):not([type="checkbox"])') || 
-                             document.querySelector('input[value=""]:not([type="checkbox"])');
-            if (firstEmpty) {
-                firstEmpty.focus();
-            }
-        });
-    </script>
 </body>
 </html>
