@@ -71,8 +71,8 @@ Sistema de contacto completo en PHP que permite a los visitantes de tu sitio web
 
 Puedes ver una demostración en vivo del sistema:
 
-- **Formulario**: [Ver Demo](https://tu-sitio.com/demo/contacto)
-- **Panel Admin**: [Ver Demo](https://tu-sitio.com/demo/contacto/ver-mensajes.php) (Contraseña: `demo123`)
+- **Formulario**: [Ver Demo](https://dnns.es/demo/contacto)
+- **Panel Admin**: [Ver Demo](https://dnns.es/demo/contacto/ver-mensajes.php) (Contraseña: `admin123`)
 
 ### Capturas de pantalla
 
