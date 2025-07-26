@@ -1,0 +1,51 @@
+---NUEVO MENSAJE---
+Fecha: 2025-03-22 13:48:36
+Nombre: Antonio
+Email: antonio@morillo.eu
+Asunto: sugerencia
+IP: 83.49.192.25
+Estado: Visto
+Mensaje: asdrhwrtjk
+
+---NUEVO MENSAJE---
+Fecha: 2025-03-22 13:50:41
+Nombre: Antonio
+Email: antonio@morillo.eu
+Asunto: consulta
+IP: 83.49.192.25
+Estado: Visto
+Mensaje: qwregh3145uyh24u
+
+---NUEVO MENSAJE---
+Fecha: 2025-03-22 14:09:19
+Nombre: Sergio
+Email: sergio@morillo.eu
+Asunto: consulta
+IP: 83.49.192.25
+Estado: Visto
+Mensaje: Se puede ver en cualquir lugar ?
+
+---NUEVO MENSAJE---
+Fecha: 2025-03-23 11:42:40
+Nombre: Tomeu
+Email: compras@morillo.eu
+Asunto: soporte
+IP: 206.204.137.52
+Estado: Visto
+Mensaje: <footer>
+<div class="footer-content">
+Contacto
+</a>
+</div>
+</footer>
+<a href="https: //dnns.es/proyectos/contacto/index.html" class="contact-link" target="_blank">
+
+---NUEVO MENSAJE---
+Fecha: 2025-03-23 11:49:24
+Nombre: control
+Email: info@morillo.eu
+Asunto: soporte
+IP: 206.204.137.52
+Estado: Visto
+Mensaje: https://control.dnns.es/
+
